@@ -30,15 +30,43 @@ function Index() {
   const [showErrors, setShowErrors] = useState(false);
   const [done, setDone] = useState(false);
   const lock = useRef(false);
+  const resultsAppearedAt = useRef(0);
+  const resultEntry = useRef<string | null>(null);
   const scoreRef = useRef<HTMLHeadingElement>(null);
   const topRef = useRef<HTMLHeadingElement>(null);
-  const focusTarget = useRef<"score" | "top" | null>(null);
+  const checkRef = useRef<HTMLButtonElement>(null);
+  const focusTarget = useRef<"score" | "top" | "check" | null>(null);
 
   const answered = answers.filter(Boolean).length;
   const missing = missingNumbers(answers);
 
   useEffect(() => {
+    const clearResultsEntry = () => {
+      const { researchCheckerResults: _entry, ...state } = window.history.state ?? {};
+      window.history.replaceState(state, "", window.location.pathname + window.location.search);
+    };
+    // A URL alone cannot restore answers that are never saved.
+    if (window.location.hash === "#results") clearResultsEntry();
+
+    const onHistoryChange = () => {
+      const isResults = window.location.hash === "#results" &&
+        resultEntry.current !== null &&
+        window.history.state?.researchCheckerResults === resultEntry.current;
+      lock.current = isResults;
+      setShowErrors(false);
+      focusTarget.current = isResults ? "score" : "check";
+      if (isResults) resultsAppearedAt.current = performance.now();
+      else if (window.location.hash === "#results") clearResultsEntry();
+      setDone(isResults);
+    };
+    window.addEventListener("popstate", onHistoryChange);
+    return () => window.removeEventListener("popstate", onHistoryChange);
+  }, []);
+
+  useEffect(() => {
+    if (done) resultsAppearedAt.current = performance.now();
     if (focusTarget.current === "score") scoreRef.current?.focus();
+    if (focusTarget.current === "check") checkRef.current?.focus();
     if (focusTarget.current === "top") {
       window.scrollTo({ top: 0 });
       topRef.current?.focus();
@@ -57,11 +85,22 @@ function Index() {
       return;
     }
     lock.current = true;
+    resultEntry.current = crypto.randomUUID();
+    window.history.pushState(
+      { ...window.history.state, researchCheckerResults: resultEntry.current },
+      "",
+      window.location.pathname + window.location.search + "#results",
+    );
+    resultsAppearedAt.current = performance.now();
     focusTarget.current = "score";
     setDone(true);
   };
 
   const reset = () => {
+    if (performance.now() - resultsAppearedAt.current < 600) return;
+    resultEntry.current = null;
+    const { researchCheckerResults: _entry, ...state } = window.history.state ?? {};
+    window.history.replaceState(state, "", window.location.pathname + window.location.search);
     setAnswers([undefined, undefined, undefined, undefined, undefined]);
     setShowErrors(false);
     lock.current = false;
@@ -150,7 +189,7 @@ function Index() {
             )}
           </div>
 
-          <button type="submit" className="btn-primary mt-4 w-full sm:w-auto">
+          <button ref={checkRef} type="submit" className="btn-primary mt-4 w-full sm:w-auto">
             Check my question
           </button>
         </form>
